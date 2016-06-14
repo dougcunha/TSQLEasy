@@ -454,10 +454,11 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
             self.sql_query = self.view.substr(sublime.Region(0, self.view.size()))
 
         if self.sqlcon.sqlconnection is not None and self.sql_query:
-            queries = self.sql_query.split('\n--go\n')
+            import re
+            queries = re.split('\ngo(\n|$)+', self.sql_query, flags=re.IGNORECASE + re.MULTILINE)
             text = ''
             for query in queries:
-                if query:
+                if query and query.strip():
                     error = None
                     dt_before = time.time()
                     try:
@@ -480,6 +481,7 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
                 self.res_view.set_name('TSQLEasy result (%s)' % current_time)
                 self.res_view.settings().set("word_wrap", False)
                 self.res_view.run_command('tsql_easy_insert_text', {'position': self.res_view.size(), 'text': text})
+                self.res_view.set_scratch(True)
                 sublime.active_window().focus_view(self.res_view)
 
             else:
