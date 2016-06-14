@@ -438,12 +438,18 @@ class TsqlEasyEventDump(sublime_plugin.EventListener):
             else:
                 return (te_get_tables())
 
-
 class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
 
     res_view = None
 
-    def run(self, view, query=None):
+    def run(self, view, query=None, clear=False):
+        if clear:
+            if not self.res_view:
+                return
+            self.res_view.run_command("select_all")
+            self.res_view.run_command("right_delete")
+            return
+
         self.sqlcon = te_get_connection()
         self.view.set_line_endings('windows')
         if query:
