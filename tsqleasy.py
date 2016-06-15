@@ -389,6 +389,106 @@ class TsqlEasyInsertTextCommand(sublime_plugin.TextCommand):
     def run(self, edit, position, text):
         self.view.insert(edit, position, text)
 
+class TsqlEasyDdlCommand(sublime_plugin.TextCommand):
+    DDL_CMD = """
+    with columndef (tablename, colname, colnum, calc, decla, ident, declb)
+    as (
+      select
+        tablename = i.table_name,
+        colname = i.column_name,
+        colnum = i.ordinal_position,
+        calc = case when
+          cp.definition is not null then
+            ' as ' + cp.definition
+            else null
+        end,
+        decla = case
+          when (data_type in ('varchar', 'nvarchar', 'char',
+            'nchar', 'binary', 'varbinary')) then
+            case
+              when (character_maximum_length = -1) then
+                data_type + '(max)'
+              else '[' + data_type + '](' +
+               convert(varchar(6), character_maximum_length) + ')'
+            end
+          when (data_type in ('decimal', 'numeric')) then
+              '[' + data_type + '](' + convert(varchar(4), numeric_precision) +
+                ',' + convert(varchar(4), numeric_scale) + ')'
+          when (data_type in ('bit', 'money', 'smallmoney', 'int', 'smallint',
+            'tinyint', 'bigint', 'date', 'time', 'datetime', 'smalldatetime',
+            'datetime2', 'datetimeoffset', 'datetime2', 'float',
+            'real', 'text', 'ntext', 'image',
+            'timestamp', 'uniqueidentifier', 'xml')) then
+            '[' + data_type +']'
+          else 'unknown type'
+        end,
+        ident = case when (select columnproperty(object_id(t.table_name),
+          i.column_name,'IsIdentity')) = 1 then 'identity' else '' end,
+        declb = case
+          when (i.is_nullable = 'YES') then 'null'
+          else 'not null'
+        end
+      from information_schema.columns i
+      join information_schema.tables t on
+        t.table_name = i.table_name and t.table_schema = i.table_schema
+      left join sys.computed_columns cp on
+        cp.object_id = object_id(t.table_name) and cp.name = i.column_name
+      where i.table_schema = 'dbo'
+        and t.table_type = 'BASE TABLE'
+        and i.table_name = '{tabela}'
+      )
+    select
+      'create table [' + tablename + '] ('  +
+      substring((select
+          ', '  + char(10) + '  [' + colname + '] ' +
+            case when calc is not null then calc
+            else decla + ' ' + ident + ' ' + declb end
+        from columndef
+        where tablename = t.tablename
+        order by colnum
+        for xml path (''))
+      , 2, 15000) + char(10) + ')' + char(10) + 'go' + char(10)
+    from (select distinct
+        tablename
+      from columndef) t
+    """
+    def run(self, edit, position, tabela):
+        print('iniciando...')
+        print(tabela)
+        self.sqlcon = te_get_connection()
+        try:
+            self.sqlcon.dbexec(self.DDL_CMD.format(tabela=tabela))
+        except Exception as e:
+            error = '%s: %s' % (type(e).__name__, e.args[1])
+            self.view.insert(edit, position, error)
+
+        data_rows = ''
+        if self.sqlcon.sqldataset:
+            for row in self.sqlcon.sqldataset:
+                row_list = [self.getval(val) for val in row]
+                data_rows += ''.join(row_list)
+
+        self.view.insert(edit, position, data_rows)
+
+    def getval(self, value):
+        if value is None:
+            return '{null}'
+        else:
+            if pythonver >= 3:
+                return str(value)
+            else:
+                if isinstance(value, unicode):
+                    return value
+                elif isinstance(value, str):
+                    return value.decode(te_get_encodings())
+                elif isinstance(value, bytearray):
+                    # http://obsoleter.com/2012/8/28/pyodbc-and-sql-server-binary-fields/
+                    hs = ["{0:0>2}".format(hex(b)[2:].upper()) for b in value]
+                    return '0x' + ''.join(hs)
+                else:
+                    return unicode(str(value))
+
+
 
 class TsqlEasyEventDump(sublime_plugin.EventListener):
 
@@ -442,13 +542,22 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
 
     res_view = None
 
-    def run(self, view, query=None, clear=False):
+    def run(self, view, query=None, clear=False, ddl=False):
         if clear:
             if not self.res_view:
                 return
             self.res_view.run_command("select_all")
             self.res_view.run_command("right_delete")
             return
+
+        if ddl:
+            if not self.res_view:
+                return
+            if self.view.sel()[0]:
+                tabela = self.view.substr(self.view.sel()[0])
+                print('Tabela' + tabela)
+                self.res_view.run_command('tsql_easy_ddl', {'position': self.res_view.size(), 'tabela': tabela})
+                return
 
         self.sqlcon = te_get_connection()
         self.view.set_line_endings('windows')
