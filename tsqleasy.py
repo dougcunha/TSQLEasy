@@ -11,6 +11,7 @@ import tempfile
 import sublime
 import sublime_plugin
 
+
 pythonver = sys.version_info[0]
 if pythonver >= 3:
     from . import sqlodbccon
@@ -389,7 +390,8 @@ class TsqlEasyInsertTextCommand(sublime_plugin.TextCommand):
     def run(self, edit, position, text):
         self.view.insert(edit, position, text)
 
-class TsqlEasyDdlCommand(sublime_plugin.TextCommand):
+class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
+    res_view = None
     DDL_CMD = """
     with columndef (tablename, colname, colnum, calc, decla, ident, declb)
     as (
@@ -408,18 +410,18 @@ class TsqlEasyDdlCommand(sublime_plugin.TextCommand):
             case
               when (character_maximum_length = -1) then
                 data_type + '(max)'
-              else '[' + data_type + '](' +
+              else data_type + '(' +
                convert(varchar(6), character_maximum_length) + ')'
             end
           when (data_type in ('decimal', 'numeric')) then
-              '[' + data_type + '](' + convert(varchar(4), numeric_precision) +
+              data_type + '(' + convert(varchar(4), numeric_precision) +
                 ',' + convert(varchar(4), numeric_scale) + ')'
           when (data_type in ('bit', 'money', 'smallmoney', 'int', 'smallint',
             'tinyint', 'bigint', 'date', 'time', 'datetime', 'smalldatetime',
             'datetime2', 'datetimeoffset', 'datetime2', 'float',
             'real', 'text', 'ntext', 'image',
             'timestamp', 'uniqueidentifier', 'xml')) then
-            '[' + data_type +']'
+            data_type
           else 'unknown type'
         end,
         ident = case when (select columnproperty(object_id(t.table_name),
@@ -438,37 +440,142 @@ class TsqlEasyDdlCommand(sublime_plugin.TextCommand):
         and i.table_name = '{tabela}'
       )
     select
-      'create table [' + tablename + '] ('  +
       substring((select
-          ', '  + char(10) + '  [' + colname + '] ' +
+            char(10) + colname + ' ' +
             case when calc is not null then calc
             else decla + ' ' + ident + ' ' + declb end
         from columndef
         where tablename = t.tablename
         order by colnum
         for xml path (''))
-      , 2, 15000) + char(10) + ')' + char(10) + 'go' + char(10)
+      , 2, 15000)
     from (select distinct
         tablename
       from columndef) t
+    union all
+    select '\n-------- Primary Key --------\n'
+    union all
+    select
+      constraint_name + ' ' +
+      stuff((select ', ' +
+        cast(i.column_name as varchar(50)) [text()]
+             from information_schema.key_column_usage i
+             where objectproperty(object_id(i.constraint_schema + '.' +
+               i.constraint_name), 'isprimarykey') = 1
+              and i.table_schema = 'dbo'
+              and i.table_name = u.table_name
+             for xml path(''), type)
+            .value('.','nvarchar(max)'),1,2,' ')
+    from information_schema.key_column_usage u
+    where objectproperty(object_id(u.constraint_schema + '.' +
+      u.constraint_name), 'isprimarykey') = 1
+      and u.table_schema = 'dbo'
+      and u.table_name = '{tabela}'
+    group by u.table_name, u.constraint_name
+    union all
+    select '\n-------- Unique Keys --------\n'
+    union all
+    select
+       u.constraint_name + ' ' +
+       stuff((select ', ' +
+         cast(i.column_name as varchar(50)) [text()]
+              from information_schema.constraint_column_usage i
+              where objectproperty(object_id(i.constraint_schema + '.' +
+                i.constraint_name), 'IsUniqueCnst') = 1
+               and i.table_schema = 'dbo'
+               and i.table_name = u.table_name
+              for xml path(''), type)
+             .value('.','nvarchar(max)'),1,2,' ')
+     from information_schema.constraint_column_usage u
+     where objectproperty(object_id(u.constraint_schema + '.' +
+       u.constraint_name), 'IsUniqueCnst') = 1
+       and u.table_schema = 'dbo'
+       and u.table_name = '{tabela}'
+     group by u.table_name, u.constraint_name
+     union all
+     select '\n-------- Defaults --------\n'
+     union all
+     select
+         d.name + ' ' + d.definition +
+           ' for [' +  c.name + ']' + char(10)
+     from sys.default_constraints d
+     inner join sys.columns c on
+         d.parent_object_id = c.object_id
+         and d.parent_column_id = c.column_id
+     inner join sys.tables t on
+         t.object_id = c.object_id
+     where t.schema_id = schema_id('dbo')
+       and t.name = '{tabela}'
+    union all
+    select '\n-------- Foreign Keys --------\n'
+    union all
+    select fk.name + ' ' + stuff((select ',' + c.name
+      from sys.columns as c
+      inner join sys.foreign_key_columns as fkc on
+        fkc.parent_column_id = c.column_id
+        and fkc.parent_object_id = c.[object_id]
+      where fkc.constraint_object_id = fk.[object_id]
+      order by fkc.constraint_column_id
+      for xml path(N''), type).value(N'.[1]', N'nvarchar(max)'), 1, 1, N'')
+      + ' references ' + rs.name + '.' + rt.name
+      + '(' + stuff((select ',' + c.name
+        from sys.columns as c
+        inner join sys.foreign_key_columns as fkc on
+          fkc.referenced_column_id = c.column_id
+          and fkc.referenced_object_id = c.[object_id]
+        where fkc.constraint_object_id = fk.[object_id]
+        order by fkc.constraint_column_id
+        FOR XML PATH(N''), TYPE).value(N'.[1]', N'nvarchar(max)'), 1, 1, N'') +')' +
+         char(10)
+    from sys.foreign_keys as fk
+    inner join sys.tables as rt
+      on fk.referenced_object_id = rt.[object_id]
+    inner join sys.schemas as rs
+      on rt.[schema_id] = rs.[schema_id]
+    inner join sys.tables as ct
+      on fk.parent_object_id = ct.[object_id]
+    inner join sys.schemas as cs
+      on ct.[schema_id] = cs.[schema_id]
+    where rt.is_ms_shipped = 0
+      and ct.is_ms_shipped = 0
+      and rs.schema_id = schema_id('dbo')
+      and rt.schema_id = schema_id('dbo')
+      and cs.schema_id = schema_id('dbo')
+      and ct.schema_id = schema_id('dbo')
+      and fk.parent_object_id = object_id('{tabela}')
     """
-    def run(self, edit, position, tabela):
-        print('iniciando...')
-        print(tabela)
+    def run(self, edit):
+        if not ('sql' in self.view.settings().get('syntax').lower()):
+            return
+        tabela = self.view.substr(self.view.sel()[0])
+        if not tabela:
+            return
+
+        panel_name = 'result_panel'
+        if not self.res_view:
+            if int(sublime.version()) >= 3000:
+                self.res_view = sublime.active_window().create_output_panel(panel_name)
+            else:
+                self.res_view = sublime.active_window().get_output_panel(panel_name)
+
         self.sqlcon = te_get_connection()
         try:
             self.sqlcon.dbexec(self.DDL_CMD.format(tabela=tabela))
         except Exception as e:
             error = '%s: %s' % (type(e).__name__, e.args[1])
-            self.view.insert(edit, position, error)
+            self.view.insert(edit, 0, error)
 
-        data_rows = ''
+        data_rows = '-------- Tabela: {tabela} --------\n'.format(tabela=tabela)
         if self.sqlcon.sqldataset:
             for row in self.sqlcon.sqldataset:
                 row_list = [self.getval(val) for val in row]
                 data_rows += ''.join(row_list)
-
-        self.view.insert(edit, position, data_rows)
+        data_rows += '\n' + ('-' * (26 + len(tabela)))
+        self.res_view.run_command("select_all")
+        self.res_view.run_command("right_delete")
+        self.res_view.run_command('tsql_easy_insert_text', {'position': self.res_view.size(), 'text': data_rows + '\n'})
+        self.res_view.show(self.res_view.size())
+        sublime.active_window().run_command("show_panel", {"panel": "output." + panel_name})
 
     def getval(self, value):
         if value is None:
@@ -543,21 +650,14 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
     res_view = None
 
     def run(self, view, query=None, clear=False, ddl=False):
+        if not ('sql' in self.view.settings().get('syntax').lower()):
+            return
         if clear:
             if not self.res_view:
                 return
             self.res_view.run_command("select_all")
             self.res_view.run_command("right_delete")
             return
-
-        if ddl:
-            if not self.res_view:
-                return
-            if self.view.sel()[0]:
-                tabela = self.view.substr(self.view.sel()[0])
-                print('Tabela' + tabela)
-                self.res_view.run_command('tsql_easy_ddl', {'position': self.res_view.size(), 'tabela': tabela})
-                return
 
         self.sqlcon = te_get_connection()
         self.view.set_line_endings('windows')
@@ -577,6 +677,7 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
                     error = None
                     dt_before = time.time()
                     try:
+                        query = query.encode(sys.getfilesystemencoding()).decode('utf-8', 'ignore')
                         self.sqlcon.dbexec(query)
                     except Exception as e:
                         error = '%s: %s' % (type(e).__name__, e.args[1])
@@ -597,7 +698,8 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
                 self.res_view.settings().set("word_wrap", False)
                 self.res_view.run_command('tsql_easy_insert_text', {'position': self.res_view.size(), 'text': text})
                 self.res_view.set_scratch(True)
-                sublime.active_window().focus_view(self.res_view)
+                # sublime.active_window().focus_view(self.res_view)
+
 
             else:
                 panel_name = 'result_panel'
