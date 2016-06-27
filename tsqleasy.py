@@ -24,6 +24,7 @@ else:
 
 DEFAULT_SYNTAX = 'Packages/TSQLEasy/TSQL.tmLanguage'
 DEFAULT_REPORT_SYNTAX = 'Packages/Markdown/Markdown.tmLanguage'
+DEFAULT_RESULT_SYNTAX = 'Packages/TSQLEasy/Result.sublime-syntax'
 
 
 class SQLAlias():
@@ -81,11 +82,25 @@ def te_get_connection():
         username = server_list[server_active]['username']
         password = server_list[server_active]['password']
         database = server_list[server_active]['database']
-        autocommit = server_list[server_active]['autocommit'] if 'autocommit' in server_list[server_active] else True
-        timeout = server_list[server_active]['timeout'] if 'timeout' in server_list[server_active] else 0
+        autocommit = server_list[server_active][
+            'autocommit'] if 'autocommit' in server_list[server_active] else \
+            True
+        timeout = server_list[server_active][
+            'timeout'] if 'timeout' in server_list[server_active] else 0
 
         try:
-            sqlcon = sqlodbccon.SQLCon(dsn=dsn, server=server, driver=driver, serverport=server_port, username=username, password=password, database=database, sleepsecs=5, autocommit=autocommit, timeout=timeout)
+            sqlcon = sqlodbccon.SQLCon(
+                dsn=dsn,
+                server=server,
+                driver=driver,
+                serverport=server_port,
+                username=username,
+                password=password,
+                database=database,
+                sleepsecs=5,
+                autocommit=autocommit,
+                timeout=timeout)
+
             return sqlcon
         except Exception as e:
             sublime.message_dialog(e.args[1])
@@ -103,8 +118,7 @@ def te_get_encodings():
 
 
 def te_get_alias(string_data):
-    ''' get string alias by caps characters '''
-
+    """Get string alias by caps characters."""
     rs = re.findall('[A-Z][^A-Z]*', string_data)
     fs = ''
     for word in rs:
@@ -115,18 +129,21 @@ def te_get_alias(string_data):
 def te_get_all_aliases(text):
     # get aliases from substrings FROM and JOIN
     text = text.lower()
-    # edited by Caio Hamamura - will get schema and square brackets (optionally)
-    pattern = r'[^\w](from|join)\s{0,}(\[?\w+?\]?\.?\[?\w+\]?)\s(as\s)?\s{0,}(\w+)'
+    # edited by Caio Hamamura - will get schema and square brackets
+    # (optionally)
+    pattern = r'[^\w](from|join)\s{0,}(\[?\w+?\]?\.?\[?\w+\]?)\s(as\s)?\s{0,}(\w+)' # NOQA
     aliases_strings = re.findall(pattern, text)
     if aliases_strings:
         for alias in aliases_strings:
             if alias[1] and alias[3]:
-                global_alias.set_alias(alias[3].strip('\n').strip(), alias[1].strip('\n').strip())
+                global_alias.set_alias(
+                    alias[3].strip('\n').strip(), alias[1].strip('\n').strip())
     del aliases_strings
 
     # get aliases from section FROM whithou JOINs..
     is_from_section = False
-    words = ('where', 'join', 'order', 'select', 'insert', 'update', 'with', 'group')
+    words = ('where', 'join', 'order', 'select',
+             'insert', 'update', 'with', 'group')
     for line in text.split('\n'):
         line = line.strip().strip(',')
         if line.startswith('from') or ' from' in line:
@@ -139,7 +156,10 @@ def te_get_all_aliases(text):
             if aliases_strings:
                 for alias in aliases_strings:
                     if alias[0] and alias[2]:
-                        global_alias.set_alias(alias[2].strip('\n').strip(), alias[0].strip('\n').strip())
+                        global_alias.set_alias(
+                            alias[2].strip('\n')
+                            .strip(), alias[0]
+                            .strip('\n').strip())
             del aliases_strings
 
 
@@ -159,10 +179,11 @@ def te_reload_aliases_from_file():
 
 
 def te_get_title():
-    ''' returns page title of active tab from view_name or from file_name'''
+    """Return page title of active tab from view_name or from file_name."""
     if not sublime.active_window() or sublime.active_window() is None:
         return ''
-    if not sublime.active_window().active_view() or sublime.active_window().active_view() is None:
+    if not sublime.active_window().active_view() or \
+            sublime.active_window().active_view() is None:
         return ''
     view_name = sublime.active_window().active_view().name()
     if view_name:
@@ -174,8 +195,10 @@ def te_get_title():
 
 
 def te_get_columns(position=None):
-    ''' get table columns for completions '''
-    sqlreq_columns = "SELECT c.name FROM sys.columns c WHERE c.object_id = OBJECT_ID(?)"
+    """Get table columns for completions."""
+    sqlreq_columns = """SELECT c.name
+    from sys.columns c where c.object_id = OBJECT_ID(?)
+    """
 
     te_reload_aliases_from_file()
     view = sublime.active_window().active_view()
@@ -202,9 +225,10 @@ def te_get_columns(position=None):
 
 
 def te_get_tables(schema=None):
-    ''' get tables list with filter by schema for completions '''
-
-    sqlreq_tables = 'SELECT Distinct TABLE_NAME as name FROM information_schema.TABLES WHERE TABLE_SCHEMA = (?)'
+    """Get tables list with filter by schema for completions."""
+    sqlreq_tables = """SELECT Distinct TABLE_NAME as name
+    FROM information_schema.TABLES WHERE TABLE_SCHEMA = (?)
+    """
 
     tables = []
     sqlcon = te_get_connection()
@@ -238,7 +262,9 @@ def te_show_data(sql_query, setup, **kwargs):
                     # field_type = col.get('type', None)
                     col_prop = col['prop']
 
-                    value = str(row[columns_indexes.get(col_prop)]).strip().replace('\r', ' ')
+                    value = str(row[columns_indexes.get(col_prop)]) \
+                        .strip().replace(
+                        '\r', ' ')
                     if maxlen:
                         value = ' '.join(value.splitlines())
                     # if field_type == 'datetime':
@@ -287,8 +313,8 @@ def te_show_data(sql_query, setup, **kwargs):
             # dt_before = time.time()
             sqlcon.dbexec(sql_query, sql_params)
             rows = sqlcon.sqldataset
-            # columns_indexes = {v[0]: k for k, v in enumerate(sqlcon.sqlcolumns)}
-            columns_indexes = dict((v[0], k) for k, v in enumerate(sqlcon.sqlcolumns))
+            columns_indexes = dict((v[0], k)
+                                   for k, v in enumerate(sqlcon.sqlcolumns))
             # dt_after = time.time()
             # timedelta = dt_after - dt_before
             # current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -298,12 +324,17 @@ def te_show_data(sql_query, setup, **kwargs):
         content_header += 'Total processes: %s\n\n' % len(rows)
 
         table_data_widths = get_data()
-        # content_header_line = '%s-\n' % ('-' * (sum([val for val in table_data_widths.values()]) + len(cols) * 3))
 
-        content_header_line = ' | '.join(['-' * table_data_widths.get(col['prop'], 0) for col in cols])
+        content_header_line = ' | '.join(
+            ['-' * table_data_widths.get(col['prop'], 0) for col in cols])
         content_header_line = '| %s |\n' % content_header_line
 
-        table_header = '| ' + ' | '.join(pretty(col['colname'], table_data_widths[col['prop']], 'center') for col in cols)
+        table_header = '| ' + \
+            ' | '.join(
+                pretty(
+                    col['colname'],
+                    table_data_widths[col['prop']],
+                    'center') for col in cols)
         table_header = '%s |\n' % table_header
 
         if rows:
@@ -316,7 +347,9 @@ def te_show_data(sql_query, setup, **kwargs):
                     # field_type = col.get('type', None)
                     col_prop = col['prop']
 
-                    value = str(row[columns_indexes.get(col_prop)]).strip().replace('\r', ' ')
+                    value = str(row[columns_indexes.get(col_prop)]) \
+                        .strip().replace(
+                        '\r', ' ')
                     if maxlen:
                         value = ' '.join(value.splitlines())
 
@@ -325,7 +358,10 @@ def te_show_data(sql_query, setup, **kwargs):
 
                     value = cut(value, maxlen)
                     align = col.get('align', 'left')
-                    table_row += ' %s |' % pretty(value, table_data_widths[col_prop], align)
+                    table_row += ' %s |' % pretty(
+                        value,
+                        table_data_widths[col_prop],
+                        align)
                 table_row += '\n'
                 content += table_row
         else:
@@ -337,27 +373,29 @@ def te_show_data(sql_query, setup, **kwargs):
 
         # return Markdown compatible report
         return ''.join([
-                content_header,
-                # '```\n',
-                # content_header_line,
-                table_header,
-                content_header_line,
-                content,
-                # content_footer_line,
-                # '```\n'
-            ])
+            content_header,
+            # '```\n',
+            # content_header_line,
+            table_header,
+            content_header_line,
+            content,
+            # content_footer_line,
+            # '```\n'
+        ])
 
 
 def te_validate_screen(screen_type):
 
     message = ''
-    is_valid = sublime.active_window().active_view().settings().get(screen_type, False)
+    is_valid = sublime.active_window().active_view().settings().get(
+        screen_type, False)
 
     if not is_valid:
         if screen_type == 'te_activity_monitor':
             message = 'This command is provided for the Activity monitor!'
         elif screen_type == 'te_long_queries':
-            message = 'This command is provided for the Long running queries report!'
+            message = """This command is provided for
+             the Long running queries report!"""
         else:
             message = 'This command is not provided for this view!'
 
@@ -374,14 +412,19 @@ class TsqlEasySetActiveServerCommand(sublime_plugin.WindowCommand):
         self.server_active = te_get_setting('te_server_active', 'Offline')
         servers = te_get_setting('te_sql_server')
         self.server_keys = [self.is_active(x) for x in servers.keys()]
-        sublime.set_timeout(lambda: self.window.show_quick_panel(self.server_keys, self.on_done), 1)
+        sublime.set_timeout(
+            lambda: self.window.show_quick_panel(
+                self.server_keys,
+                self.on_done), 1)
 
     def is_active(self, server_key):
-        checked = self.server_on if server_key == self.server_active else self.server_off
+        checked = self.server_on if server_key == self.server_active else \
+            self.server_off
         return '%s %s' % (checked, server_key)
 
     def on_done(self, index):
-        if index >= 0 and not self.server_keys[index].startswith(self.server_on):
+        if index >= 0 and not \
+                self.server_keys[index].startswith(self.server_on):
             te_set_setting("te_server_active", self.server_keys[index].strip())
 
 
@@ -390,16 +433,16 @@ class TsqlEasyInsertTextCommand(sublime_plugin.TextCommand):
     def run(self, edit, position, text):
         self.view.insert(edit, position, text)
 
+
 class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
     res_view = None
-    DDL_CMD = """
-    declare @nome sysname = '{tabela}'
+    DDL_CMD = """declare @nome sysname = '{table}'
     declare
-      @tabela sysname,
+      @table sysname,
       @schema sysname
 
     select
-      @tabela = parsename(@nome, 1),
+      @table = parsename(@nome, 1),
       @schema = isnull(parsename(@nome, 2), 'dbo');
 
     with columndef (tablename, colname, colnum, calc, decla, ident, declb)
@@ -446,7 +489,7 @@ class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
         cp.object_id = object_id(t.table_name) and cp.name = i.column_name
       where i.table_schema = @schema
         and t.table_type = 'BASE TABLE'
-        and i.table_name = @tabela
+        and i.table_name = @table
       )
     select
       substring((select
@@ -479,7 +522,7 @@ class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
     where objectproperty(object_id(u.constraint_schema + '.' +
       u.constraint_name), 'isprimarykey') = 1
       and u.table_schema = @schema
-      and u.table_name = @tabela
+      and u.table_name = @table
     group by u.table_name, u.constraint_name
     union all
     select '\n-------- Unique Keys --------\n'
@@ -499,7 +542,7 @@ class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
      where objectproperty(object_id(u.constraint_schema + '.' +
        u.constraint_name), 'IsUniqueCnst') = 1
        and u.table_schema = @schema
-       and u.table_name = @tabela
+       and u.table_name = @table
      group by u.table_name, u.constraint_name
      union all
      select '\n-------- Defaults --------\n'
@@ -514,7 +557,7 @@ class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
      inner join sys.tables t on
          t.object_id = c.object_id
      where t.schema_id = schema_id(@schema)
-       and t.name = @tabela
+       and t.name = @table
     union all
     select '\n-------- Foreign Keys --------\n'
     union all
@@ -534,7 +577,7 @@ class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
           and fkc.referenced_object_id = c.[object_id]
         where fkc.constraint_object_id = fk.[object_id]
         order by fkc.constraint_column_id
-        FOR XML PATH(N''), TYPE).value(N'.[1]', N'nvarchar(max)'), 1, 1, N'') +')' +
+        FOR XML PATH(N''), TYPE).value(N'.[1]', N'nvarchar(max)'),1,1,N'')+')'+
          char(10)
     from sys.foreign_keys as fk
     inner join sys.tables as rt
@@ -551,40 +594,46 @@ class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
       and rt.schema_id = schema_id(@schema)
       and cs.schema_id = schema_id(@schema)
       and ct.schema_id = schema_id(@schema)
-      and fk.parent_object_id = object_id(@tabela)
+      and fk.parent_object_id = object_id(@table)
     """
+
     def run(self, edit):
         if not ('sql' in self.view.settings().get('syntax').lower()):
             return
-        tabela = self.view.substr(self.view.sel()[0])
-        if not tabela:
+        table = self.view.substr(self.view.sel()[0])
+        if not table:
             return
 
         panel_name = 'result_panel'
         if not self.res_view:
             if int(sublime.version()) >= 3000:
-                self.res_view = sublime.active_window().create_output_panel(panel_name)
+                self.res_view = sublime.active_window().create_output_panel(
+                    panel_name)
             else:
-                self.res_view = sublime.active_window().get_output_panel(panel_name)
+                self.res_view = sublime.active_window().get_output_panel(
+                    panel_name)
 
         self.sqlcon = te_get_connection()
         try:
-            self.sqlcon.dbexec(self.DDL_CMD.format(tabela=tabela))
+            self.sqlcon.dbexec(self.DDL_CMD.format(table=table))
         except Exception as e:
             error = '%s: %s' % (type(e).__name__, e.args[1])
             self.view.insert(edit, 0, error)
 
-        data_rows = '-------- Tabela: {tabela} --------\n'.format(tabela=tabela)
+        data_rows = '-------- table: {table} --------\n'.format(table=table)
         if self.sqlcon.sqldataset:
             for row in self.sqlcon.sqldataset:
                 row_list = [self.getval(val) for val in row]
                 data_rows += ''.join(row_list)
-        data_rows += '\n' + ('-' * (26 + len(tabela)))
+        data_rows += '\n' + ('-' * (26 + len(table)))
         self.res_view.run_command("select_all")
         self.res_view.run_command("right_delete")
-        self.res_view.run_command('tsql_easy_insert_text', {'position': self.res_view.size(), 'text': data_rows + '\n'})
+        self.res_view.run_command('tsql_easy_insert_text', {
+                                  'position': self.res_view.size(),
+                                  'text': data_rows + '\n'})
         self.res_view.show(self.res_view.size())
-        sublime.active_window().run_command("show_panel", {"panel": "output." + panel_name})
+        sublime.active_window().run_command(
+            "show_panel", {"panel": "output." + panel_name})
 
     def getval(self, value):
         if value is None:
@@ -605,7 +654,6 @@ class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
                     return unicode(str(value))
 
 
-
 class TsqlEasyEventDump(sublime_plugin.EventListener):
 
     def on_load(self, view):
@@ -623,7 +671,7 @@ class TsqlEasyEventDump(sublime_plugin.EventListener):
         return False
 
     def _is_alias(self, val):
-        ''' check string is table alias '''
+        """Check string is table alias."""
         te_reload_aliases_from_file()
         if not global_alias.get_alias(val.lower()):
             return False
@@ -658,7 +706,13 @@ class TsqlEasyEventDump(sublime_plugin.EventListener):
 class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
 
     res_view = None
-    macros = {}
+
+    def __init__(self, *args, **kwargs):
+        super(TsqlEasyExecSqlCommand, self).__init__(*args, **kwargs)
+        self.macros = {}
+
+    def get_done(self):
+        return self.formats_count == len(self.keys)
 
     def get_macros(self):
         self.macros = te_get_setting('te_sql_macros')
@@ -669,7 +723,8 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
         reuse_tab = te_get_setting('te_all_results_in_same_tab', False)
 
         if result_in_tab:
-            if not self.res_view or result_in_new_tab or self.res_view.id() not in [v.id() for v in sublime.active_window().views()]:
+            if not self.res_view or result_in_new_tab or self.res_view.id() \
+                    not in [v.id() for v in sublime.active_window().views()]:
                 if reuse_tab:
                     for v in sublime.active_window().views():
                         if v.settings().get('is_tsql', True):
@@ -679,23 +734,26 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
             self.res_view.set_name('TSQLEasy result')
             self.res_view.settings().set("word_wrap", False)
             self.res_view.settings().set("is_tsql", True)
+            self.res_view.set_syntax_file(DEFAULT_RESULT_SYNTAX)
             self.res_view.set_scratch(True)
             # sublime.active_window().focus_view(self.res_view)
         else:
             panel_name = 'result_panel'
             if not self.res_view:
                 if int(sublime.version()) >= 3000:
-                    self.res_view = sublime.active_window().create_output_panel(panel_name)
+                    self.res_view = \
+                        sublime.active_window().create_output_panel(panel_name)
                 else:
-                    self.res_view = sublime.active_window().get_output_panel(panel_name)
+                    self.res_view = sublime.active_window().get_output_panel(
+                        panel_name)
             self.res_view.show(self.res_view.size())
-            sublime.active_window().run_command("show_panel", {"panel": "output." + panel_name})
+            sublime.active_window().run_command(
+                "show_panel", {"panel": "output." + panel_name})
 
     def run(self, view, query=None, clear=False, ddl=False):
         if not ('sql' in self.view.settings().get('syntax').lower()):
             return
 
-        self.get_macros()
         self.get_view()
         if clear or te_get_setting('te_clear_previews_result'):
             if not self.res_view:
@@ -712,30 +770,41 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
         elif self.view.sel()[0]:
             self.sql_query = self.view.substr(self.view.sel()[0])
         else:
-            self.sql_query = self.view.substr(sublime.Region(0, self.view.size()))
+            self.sql_query = self.view.substr(
+                sublime.Region(0, self.view.size()))
 
         if self.sqlcon.sqlconnection is not None and self.sql_query:
             import re
-            queries = re.split('\ngo(\n|$)+', self.sql_query, flags=re.IGNORECASE + re.MULTILINE)
+            queries = re.split(
+                '\ngo(\n|$)+', self.sql_query,
+                flags=re.IGNORECASE + re.MULTILINE)
             text = ''
             for query in queries:
                 if query and query.strip():
                     error = None
                     dt_before = time.time()
                     try:
-                        query = query.encode(sys.getfilesystemencoding()).decode('utf-8', 'ignore')
+                        query = query.encode(
+                            sys.getfilesystemencoding()).decode(
+                            'utf-8', 'ignore')
+                        self.get_macros()
                         if self.macros:
-                            query = re.sub(r'%(\w+)', r'{\1}', query).format(**self.macros)
+                            query = re.sub(r'%(\w+)', r'{\1}', query)
+                            query = query.format(**self.macros)
                         self.sqlcon.dbexec(query)
                     except Exception as e:
                         error = '%s: %s' % (type(e).__name__, e.args[1])
                     dt_after = time.time()
                     timedelta = dt_after - dt_before
                     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    text += self.get_pretty(timedelta, current_time, query, error)
+                    text += self.get_pretty(timedelta,
+                                            current_time, query, error)
 
             self.sqlcon.dbdisconnect()
-            self.res_view.run_command('tsql_easy_insert_text', {'position': self.res_view.size(), 'text': text + '\n'})
+            self.res_view.run_command(
+                'tsql_easy_insert_text',
+                {'position': self.res_view.size(),
+                    'text': text + '\n'})
             sublime.status_message('Executed.')
         else:
             sublime.status_message('Nothing to execute.')
@@ -760,7 +829,8 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
 
     def get_pretty(self, timedelta, received_time, query, error=None):
 
-        show_request_in_result = te_get_setting('te_show_request_in_result', True)
+        show_request_in_result = te_get_setting(
+            'te_show_request_in_result', True)
 
         data_rows = []
 
@@ -807,7 +877,8 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
             '\n',
             '\n'])
 
-        return '\n'.join([val for val in [res_request, res_data, res_stats] if val])
+        return '\n'.join([val for val in [res_request, res_data, res_stats]
+                         if val])
 
     def _get_max_lens(self, rows):
         max_lens = []
@@ -832,23 +903,24 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
 
     def table_print(self, rows):
 
-        HEADER_LINE_CROSS = '---'
-        FOOTER_LINE_CROSS = '---'
-        INTABLE_LINE_CROSS = '-+-'
+        header_line_cross = '---'
+        footer_line_cross = '---'
+        intable_line_cross = '-+-'
 
         text = ''
         is_header_ready = False
         ml = self._get_max_lens(rows)
 
         line_list = ['-' * l for l in ml]
-        line_header = '--%s--\n' % HEADER_LINE_CROSS.join(line_list)
-        line_intable = '--%s--\n' % INTABLE_LINE_CROSS.join(line_list)
-        line_footer = '--%s--\n' % FOOTER_LINE_CROSS.join(line_list)
+        line_header = '--%s--\n' % header_line_cross.join(line_list)
+        line_intable = '--%s--\n' % intable_line_cross.join(line_list)
+        line_footer = '--%s--\n' % footer_line_cross.join(line_list)
 
         text += line_header
 
         for row in rows:
-            line_list = [self._pretty(val, ml[idx]) for idx, val in enumerate(row)]
+            line_list = [self._pretty(val, ml[idx])
+                         for idx, val in enumerate(row)]
             row_line = ' | '.join(line_list)
             row_line = '| %s |\n' % row_line
             text += row_line
@@ -863,7 +935,8 @@ class TsqlEasyOpenConsoleCommand(sublime_plugin.WindowCommand):
 
     def run(self):
         prefix = 'Console_'
-        tf = tempfile.NamedTemporaryFile(mode='w+t', suffix='.sql', prefix=prefix, dir=None, delete=True)
+        tf = tempfile.NamedTemporaryFile(
+            mode='w+t', suffix='.sql', prefix=prefix, dir=None, delete=True)
         new_view = sublime.active_window().open_file(tf.name)
 
         new_view.set_syntax_file(te_get_setting('te_syntax', DEFAULT_SYNTAX))
@@ -886,7 +959,8 @@ class TsqlEasyOpenServerObjectCommand(sublime_plugin.TextCommand):
 
         if chars_before == u'.':
             while not chars_before.startswith((' ', '\n')):
-                chars_before_region = sublime.Region(chars_before_region.a - 1, chars_before_region.b)
+                chars_before_region = sublime.Region(
+                    chars_before_region.a - 1, chars_before_region.b)
                 chars_before = self.view.substr(chars_before_region)
             chars_before = chars_before.strip()
 
@@ -907,14 +981,20 @@ class TsqlEasyOpenServerObjectCommand(sublime_plugin.TextCommand):
             sqlcon.dbdisconnect()
             if text:
                 prefix = '%s_tmp_' % word_cursor
-                with tempfile.NamedTemporaryFile(mode='w+t', suffix='.sql', prefix=prefix, dir=None, delete=True) as tf:
+                with tempfile.NamedTemporaryFile(
+                    mode='w+t',
+                    suffix='.sql',
+                    prefix=prefix,
+                    dir=None,
+                        delete=True) as tf:
 
                     tf.write(text.replace('\r', ''))
                     tf.seek(0)
                     if os.path.exists(tf.name):
                         new_view = sublime.active_window().open_file(tf.name)
 
-                        new_view.set_syntax_file(te_get_setting('te_syntax', DEFAULT_SYNTAX))
+                        new_view.set_syntax_file(
+                            te_get_setting('te_syntax', DEFAULT_SYNTAX))
                         new_view.settings().set('tsqleasy_is_here', True)
                         new_view.set_line_endings('unix')
         else:
@@ -929,25 +1009,32 @@ class TsqlEasyOpenLocalObjectCommand(sublime_plugin.TextCommand):
     def run(self, view):
         path = os.path.dirname(os.path.abspath(self.view.file_name()))
         position = self.view.sel()[0].begin()
-        word_cursor = self.view.substr(self.view.word(position)).strip('\n').strip()
+        word_cursor = self.view.substr(
+            self.view.word(position)).strip('\n').strip()
         self.filename = '%s.sql' % word_cursor
         if self.is_path(path):
             self.get_proc(path)
         else:
-            sublime.status_message('File [%s] does not exists in dir [%s]' % (self.filename, path))
+            sublime.status_message(
+                'File [%s] does not exists in dir [%s]'
+                % (self.filename, path))
             self.on_select()
 
     def on_select(self):
         self.proc_dirs = list(te_get_setting('te_procedure_path'))
-        sublime.set_timeout(lambda: sublime.active_window().show_quick_panel(self.proc_dirs, self.on_done), 1)
+        sublime.set_timeout(lambda: sublime.active_window().show_quick_panel(
+            self.proc_dirs, self.on_done), 1)
 
     def on_done(self, dir_index):
         path = self.proc_dirs[dir_index]
         if self.is_path(path):
             self.get_proc(path)
         else:
-            sublime.status_message('File [%s] does not exists in dir [%s]' % (self.filename, path))
-            print('File [%s] does not exists in dir [%s]' % (self.filename, path))
+            sublime.status_message(
+                'File [%s] does not exists in dir [%s]'
+                % (self.filename, path))
+            print('File [%s] does not exists in dir [%s]' %
+                  (self.filename, path))
 
     def is_path(self, path):
         self.filename_abs_path = '%s\\%s' % (path, self.filename)
@@ -967,7 +1054,7 @@ class TsqlEasyActivityMonitorCommand(sublime_plugin.TextCommand):
     def run(self, edit, is_refresh=False):
 
         # OUTER APPLY Fn_get_sql(sp.sql_handle)
-        sql_query = '''
+        sql_query = """
         SELECT sp.spid,
             -- TEXT as query,
             Db_name(sp.dbid) as dbname,
@@ -989,7 +1076,7 @@ class TsqlEasyActivityMonitorCommand(sublime_plugin.TextCommand):
         -- OUTER APPLY sys.dm_exec_sql_text(sp.sql_handle)
         WHERE sp.spid > ?
         ORDER BY sp.spid
-        '''
+        """
 
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         title = 'Activity monitor (at %s)' % current_time
@@ -1000,7 +1087,8 @@ class TsqlEasyActivityMonitorCommand(sublime_plugin.TextCommand):
             r = self.view.window().new_file()
             r.set_name(title)
             r.settings().set('te_activity_monitor', True)
-            syntax_file = te_get_setting('te_report_syntax', DEFAULT_REPORT_SYNTAX)
+            syntax_file = te_get_setting(
+                'te_report_syntax', DEFAULT_REPORT_SYNTAX)
             r.set_syntax_file(syntax_file)
         else:
             is_valid, message = te_validate_screen('te_activity_monitor')
@@ -1012,9 +1100,12 @@ class TsqlEasyActivityMonitorCommand(sublime_plugin.TextCommand):
             r.set_read_only(False)
             r.erase(edit, sublime.Region(0, self.view.size()))
 
-        text = te_show_data(sql_query=sql_query, setup='te_activity_monitor_columns', **query_params)
+        text = te_show_data(
+            sql_query=sql_query, setup='te_activity_monitor_columns',
+            **query_params)
         r.settings().set("word_wrap", False)
-        r.run_command('tsql_easy_insert_text', {'position': 0, 'text': text + '\n\n'})
+        r.run_command(
+            'tsql_easy_insert_text', {'position': 0, 'text': text + '\n\n'})
         r.set_scratch(True)
         r.set_read_only(True)
 
@@ -1024,7 +1115,7 @@ class TsqlEasyLongQueriesCommand(sublime_plugin.TextCommand):
     def run(self, edit, is_refresh=False):
 
         # http://dba.stackexchange.com/questions/66249/how-do-i-find-a-long-running-query-with-process-id-process-name-login-time-u
-        sql_query = '''
+        sql_query = """
         SELECT
             cast(cast(query_hash as varbinary) as bigint) as query_hash
             ,creation_time
@@ -1046,7 +1137,7 @@ class TsqlEasyLongQueriesCommand(sublime_plugin.TextCommand):
         FROM sys.dm_exec_query_stats as qs
         -- CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
         ORDER BY total_elapsed_time / execution_count DESC;
-        '''
+        """
 
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         title = 'Long running queries (at %s)' % current_time
@@ -1056,7 +1147,8 @@ class TsqlEasyLongQueriesCommand(sublime_plugin.TextCommand):
             r = self.view.window().new_file()
             r.set_name(title)
             r.settings().set('te_long_queries', True)
-            syntax_file = te_get_setting('te_report_syntax', DEFAULT_REPORT_SYNTAX)
+            syntax_file = te_get_setting(
+                'te_report_syntax', DEFAULT_REPORT_SYNTAX)
             r.set_syntax_file(syntax_file)
         else:
             is_valid, message = te_validate_screen('te_long_queries')
@@ -1068,20 +1160,25 @@ class TsqlEasyLongQueriesCommand(sublime_plugin.TextCommand):
             r.set_read_only(False)
             r.erase(edit, sublime.Region(0, self.view.size()))
 
-        text = te_show_data(sql_query=sql_query, setup='te_long_queries_columns', **query_params)
+        text = te_show_data(
+            sql_query=sql_query, setup='te_long_queries_columns',
+            **query_params)
         r.settings().set("word_wrap", False)
-        r.run_command('tsql_easy_insert_text', {'position': 0, 'text': text + '\n\n'})
+        r.run_command(
+            'tsql_easy_insert_text', {'position': 0, 'text': text + '\n\n'})
         r.set_scratch(True)
         r.set_read_only(True)
 
 
 class TsqlEasyShowQueryCommand(sublime_plugin.TextCommand):
+
     def run(self, edit):
 
         row_id = None
         try:
             line = self.view.substr(self.view.line(self.view.sel()[0].end()))
-            row_id = line.split('|')[1].strip()  # TODO: require ID in first column
+            # TODO: require ID in first column
+            row_id = line.split('|')[1].strip()
         except:
             pass
 
@@ -1091,10 +1188,11 @@ class TsqlEasyShowQueryCommand(sublime_plugin.TextCommand):
     def get_query(self, row_id):
 
         long_queries = self.view.settings().get('te_long_queries', False)
-        activity_monitor = self.view.settings().get('te_activity_monitor', False)
+        activity_monitor = self.view.settings().get(
+            'te_activity_monitor', False)
 
         if activity_monitor:
-            sql_query = '''
+            sql_query = """
             SELECT
                 TEXT AS query,
                 sp.status,
@@ -1102,11 +1200,11 @@ class TsqlEasyShowQueryCommand(sublime_plugin.TextCommand):
             FROM sys.sysprocesses as sp
             OUTER APPLY sys.dm_exec_sql_text(sp.sql_handle)
             WHERE sp.spid = ?
-            '''
+            """
         elif long_queries:
             # TODO: Plan show
             # --CROSS APPLY sys.dm_exec_query_plan(qs.plan_handle) st2
-            sql_query = '''
+            sql_query = """
             SELECT
                 SUBSTRING(st.text, (qs.statement_start_offset/2) + 1,
                     ((CASE statement_end_offset
@@ -1116,7 +1214,7 @@ class TsqlEasyShowQueryCommand(sublime_plugin.TextCommand):
             FROM sys.dm_exec_query_stats as qs
             CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
             where query_hash = cast(cast(? as bigint) as varbinary)
-            '''
+            """
         else:
             sublime.status_message('Error: Unknown mode')
 
@@ -1129,18 +1227,21 @@ class TsqlEasyShowQueryCommand(sublime_plugin.TextCommand):
                 if rows:
                     if activity_monitor:
                         process_query = rows[0][0]
-                        process_query = process_query.strip() if process_query else '-- No query'
+                        process_query = process_query.strip(
+                        ) if process_query else '-- No query'
                         process_status = rows[0][1].strip()
                         process_blocked_by = rows[0][2]
                     elif long_queries:
                         long_query = rows[0][0]
-                        long_query = long_query.strip() if long_query else '-- No query'
+                        long_query = long_query.strip(
+                        ) if long_query else '-- No query'
 
                     index_of_textend = self.view.size()
                     self.view.set_read_only(False)
 
                     if activity_monitor:
-                        text = '\n### PID: %s (%s)\n' % (row_id, process_status)
+                        text = '\n### PID: %s (%s)\n' % (
+                            row_id, process_status)
                         if process_blocked_by:
                             text += 'Blocked by: %s\n' % process_blocked_by
                         text += '```sql\n'
@@ -1152,7 +1253,9 @@ class TsqlEasyShowQueryCommand(sublime_plugin.TextCommand):
                         text += '%s\n' % long_query.replace('\r', '')
                         text += '```\n'
 
-                    self.view.run_command('tsql_easy_insert_text', {'position': index_of_textend, 'text': text})
+                    self.view.run_command(
+                        'tsql_easy_insert_text',
+                        {'position': index_of_textend, 'text': text})
                     self.view.show(index_of_textend + 1)
                     self.view.sel().clear()
                     self.view.sel().add(index_of_textend + 1)
