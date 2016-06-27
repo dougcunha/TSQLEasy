@@ -645,19 +645,56 @@ class TsqlEasyEventDump(sublime_plugin.EventListener):
             else:
                 return (te_get_tables())
 
+
 class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
 
     res_view = None
+    macros = {}
+
+    def get_macros(self):
+        self.macros = te_get_setting('te_sql_macros')
+
+    def get_view(self):
+        result_in_tab = te_get_setting('te_result_in_tab', False)
+        result_in_new_tab = te_get_setting('te_result_in_new_tab', False)
+        reuse_tab = te_get_setting('te_all_results_in_same_tab', False)
+
+        if result_in_tab:
+            if not self.res_view or result_in_new_tab or self.res_view.id() not in [v.id() for v in sublime.active_window().views()]:
+                if reuse_tab:
+                    for v in sublime.active_window().views():
+                        if v.settings().get('is_tsql', True):
+                            self.res_view = v
+                else:
+                    self.res_view = sublime.active_window().new_file()
+            self.res_view.set_name('TSQLEasy result')
+            self.res_view.settings().set("word_wrap", False)
+            self.res_view.settings().set("is_tsql", True)
+            self.res_view.set_scratch(True)
+            # sublime.active_window().focus_view(self.res_view)
+        else:
+            panel_name = 'result_panel'
+            if not self.res_view:
+                if int(sublime.version()) >= 3000:
+                    self.res_view = sublime.active_window().create_output_panel(panel_name)
+                else:
+                    self.res_view = sublime.active_window().get_output_panel(panel_name)
+            self.res_view.show(self.res_view.size())
+            sublime.active_window().run_command("show_panel", {"panel": "output." + panel_name})
 
     def run(self, view, query=None, clear=False, ddl=False):
         if not ('sql' in self.view.settings().get('syntax').lower()):
             return
-        if clear:
+
+        self.get_macros()
+        self.get_view()
+        if clear or te_get_setting('te_clear_previews_result'):
             if not self.res_view:
                 return
             self.res_view.run_command("select_all")
             self.res_view.run_command("right_delete")
-            return
+            if clear:
+                return
 
         self.sqlcon = te_get_connection()
         self.view.set_line_endings('windows')
@@ -678,6 +715,8 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
                     dt_before = time.time()
                     try:
                         query = query.encode(sys.getfilesystemencoding()).decode('utf-8', 'ignore')
+                        if self.macros:
+                            query = re.sub(r'%(\w+)', r'{\1}', query).format(**self.macros)
                         self.sqlcon.dbexec(query)
                     except Exception as e:
                         error = '%s: %s' % (type(e).__name__, e.args[1])
@@ -687,31 +726,7 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
                     text += self.get_pretty(timedelta, current_time, query, error)
 
             self.sqlcon.dbdisconnect()
-
-            result_in_tab = te_get_setting('te_result_in_tab', False)
-            result_in_new_tab = te_get_setting('te_result_in_new_tab', False)
-
-            if result_in_tab:
-                if not self.res_view or result_in_new_tab or self.res_view.id() not in [v.id() for v in sublime.active_window().views()]:
-                    self.res_view = sublime.active_window().new_file()
-                self.res_view.set_name('TSQLEasy result (%s)' % current_time)
-                self.res_view.settings().set("word_wrap", False)
-                self.res_view.run_command('tsql_easy_insert_text', {'position': self.res_view.size(), 'text': text})
-                self.res_view.set_scratch(True)
-                # sublime.active_window().focus_view(self.res_view)
-
-
-            else:
-                panel_name = 'result_panel'
-                if not self.res_view:
-                    if int(sublime.version()) >= 3000:
-                        self.res_view = sublime.active_window().create_output_panel(panel_name)
-                    else:
-                        self.res_view = sublime.active_window().get_output_panel(panel_name)
-                self.res_view.run_command('tsql_easy_insert_text', {'position': self.res_view.size(), 'text': text + '\n'})
-                self.res_view.show(self.res_view.size())
-                sublime.active_window().run_command("show_panel", {"panel": "output." + panel_name})
-
+            self.res_view.run_command('tsql_easy_insert_text', {'position': self.res_view.size(), 'text': text + '\n'})
             sublime.status_message('Executed.')
         else:
             sublime.status_message('Nothing to execute.')
