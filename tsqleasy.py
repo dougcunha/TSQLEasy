@@ -393,6 +393,15 @@ class TsqlEasyInsertTextCommand(sublime_plugin.TextCommand):
 class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
     res_view = None
     DDL_CMD = """
+    declare @nome sysname = '{tabela}'
+    declare
+      @tabela sysname,
+      @schema sysname
+
+    select
+      @tabela = parsename(@nome, 1),
+      @schema = isnull(parsename(@nome, 2), 'dbo');
+
     with columndef (tablename, colname, colnum, calc, decla, ident, declb)
     as (
       select
@@ -435,9 +444,9 @@ class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
         t.table_name = i.table_name and t.table_schema = i.table_schema
       left join sys.computed_columns cp on
         cp.object_id = object_id(t.table_name) and cp.name = i.column_name
-      where i.table_schema = 'dbo'
+      where i.table_schema = @schema
         and t.table_type = 'BASE TABLE'
-        and i.table_name = '{tabela}'
+        and i.table_name = @tabela
       )
     select
       substring((select
@@ -462,15 +471,15 @@ class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
              from information_schema.key_column_usage i
              where objectproperty(object_id(i.constraint_schema + '.' +
                i.constraint_name), 'isprimarykey') = 1
-              and i.table_schema = 'dbo'
+              and i.table_schema = @schema
               and i.table_name = u.table_name
              for xml path(''), type)
             .value('.','nvarchar(max)'),1,2,' ')
     from information_schema.key_column_usage u
     where objectproperty(object_id(u.constraint_schema + '.' +
       u.constraint_name), 'isprimarykey') = 1
-      and u.table_schema = 'dbo'
-      and u.table_name = '{tabela}'
+      and u.table_schema = @schema
+      and u.table_name = @tabela
     group by u.table_name, u.constraint_name
     union all
     select '\n-------- Unique Keys --------\n'
@@ -482,15 +491,15 @@ class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
               from information_schema.constraint_column_usage i
               where objectproperty(object_id(i.constraint_schema + '.' +
                 i.constraint_name), 'IsUniqueCnst') = 1
-               and i.table_schema = 'dbo'
+               and i.table_schema = @schema
                and i.table_name = u.table_name
               for xml path(''), type)
              .value('.','nvarchar(max)'),1,2,' ')
      from information_schema.constraint_column_usage u
      where objectproperty(object_id(u.constraint_schema + '.' +
        u.constraint_name), 'IsUniqueCnst') = 1
-       and u.table_schema = 'dbo'
-       and u.table_name = '{tabela}'
+       and u.table_schema = @schema
+       and u.table_name = @tabela
      group by u.table_name, u.constraint_name
      union all
      select '\n-------- Defaults --------\n'
@@ -504,8 +513,8 @@ class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
          and d.parent_column_id = c.column_id
      inner join sys.tables t on
          t.object_id = c.object_id
-     where t.schema_id = schema_id('dbo')
-       and t.name = '{tabela}'
+     where t.schema_id = schema_id(@schema)
+       and t.name = @tabela
     union all
     select '\n-------- Foreign Keys --------\n'
     union all
@@ -538,11 +547,11 @@ class TsqlEasyExecDdlCommand(sublime_plugin.TextCommand):
       on ct.[schema_id] = cs.[schema_id]
     where rt.is_ms_shipped = 0
       and ct.is_ms_shipped = 0
-      and rs.schema_id = schema_id('dbo')
-      and rt.schema_id = schema_id('dbo')
-      and cs.schema_id = schema_id('dbo')
-      and ct.schema_id = schema_id('dbo')
-      and fk.parent_object_id = object_id('{tabela}')
+      and rs.schema_id = schema_id(@schema)
+      and rt.schema_id = schema_id(@schema)
+      and cs.schema_id = schema_id(@schema)
+      and ct.schema_id = schema_id(@schema)
+      and fk.parent_object_id = object_id(@tabela)
     """
     def run(self, edit):
         if not ('sql' in self.view.settings().get('syntax').lower()):
