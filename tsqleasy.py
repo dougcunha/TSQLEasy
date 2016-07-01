@@ -58,6 +58,7 @@ class SQLAlias():
 
 
 global_alias = SQLAlias()
+global_database_name = None
 
 
 def te_get_setting(key, default_value=None):
@@ -81,7 +82,8 @@ def te_get_connection():
         server_port = server_list[server_active].get('server_port', 1433)
         username = server_list[server_active]['username']
         password = server_list[server_active]['password']
-        database = server_list[server_active]['database']
+        database = server_list[server_active]['database']  \
+            if not global_database_name else global_database_name
         autocommit = server_list[server_active][
             'autocommit'] if 'autocommit' in server_list[server_active] else \
             True
@@ -402,6 +404,54 @@ def te_validate_screen(screen_type):
     return (is_valid, message)
 
 
+class TsqlEasySelectDatabaseCommand(sublime_plugin.TextCommand):
+
+    def get_dbname(self):
+        cmd = """select db_name()"""
+        if not self.sqlcon:
+            self.sqlcon = te_get_connection()
+        try:
+            self.sqlcon.dbexec(cmd)
+            if self.sqlcon.sqldataset:
+                return self.sqlcon.sqldataset[0][0]
+            return None
+        except Exception as e:
+            error = '%s: %s' % (type(e).__name__, e.args[1])
+            sublime.message_dialog(error)
+
+    def run(self, edit):
+        def set_database(indice):
+            if indice < 0:
+                return
+            global global_database_name
+            global_database_name = databases[indice].replace('>', '')
+            self.sqlcon = te_get_connection()
+
+        if not ('sql' in self.view.settings().get('syntax').lower()):
+            return
+        cmd = """select name from sys.databases
+        where name not in ('model', 'msdb', 'tempdb')
+        order by name
+        """
+        self.sqlcon = te_get_connection()
+        try:
+            current_db = self.get_dbname()
+            self.sqlcon.dbexec(cmd)
+            databases = []
+            if self.sqlcon.sqldataset:
+                for row in self.sqlcon.sqldataset:
+                    nome = row[0]
+                    if nome == current_db:
+                        nome = '>' + nome
+                    databases.append(nome)
+                sublime.active_window().show_quick_panel(
+                    databases,
+                    set_database)
+        except Exception as e:
+            error = '%s: %s' % (type(e).__name__, e.args[1])
+            sublime.message_dialog(error)
+
+
 class TsqlEasySetActiveServerCommand(sublime_plugin.WindowCommand):
     server_keys = []
     server_on = '>'
@@ -426,6 +476,8 @@ class TsqlEasySetActiveServerCommand(sublime_plugin.WindowCommand):
         if index >= 0 and not \
                 self.server_keys[index].startswith(self.server_on):
             te_set_setting("te_server_active", self.server_keys[index].strip())
+            global global_database_name
+            global_database_name = None
 
 
 class TsqlEasyInsertTextCommand(sublime_plugin.TextCommand):
