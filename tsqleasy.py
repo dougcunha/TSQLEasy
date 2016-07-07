@@ -407,8 +407,11 @@ def te_validate_screen(screen_type):
 class TsqlEasySelectDatabaseCommand(sublime_plugin.TextCommand):
 
     def get_dbname(self):
+        global global_database_name
+        prior_db = global_database_name
         cmd = """select db_name()"""
         if not self.sqlcon:
+            global_database_name = 'master'
             self.sqlcon = te_get_connection()
         try:
             self.sqlcon.dbexec(cmd)
@@ -418,6 +421,8 @@ class TsqlEasySelectDatabaseCommand(sublime_plugin.TextCommand):
         except Exception as e:
             error = '%s: %s' % (type(e).__name__, e.args[1])
             sublime.message_dialog(error)
+        finally:
+            global_database_name = prior_db
 
     def run(self, edit):
         def set_database(indice):
