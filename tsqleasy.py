@@ -846,7 +846,8 @@ class TsqlEasyExecSqlCommand(sublime_plugin.TextCommand):
                             'utf-8', 'ignore')
                         self.get_macros()
                         if self.macros:
-                            query = re.sub(r'%(\w+)', r'{\1}', query)
+                            query = re.sub(r'(?<!like\s\')%(\w+)',
+                                           r'{\1}', query)
                             query = query.format(**self.macros)
                         self.sqlcon.dbexec(query)
                     except Exception as e:
